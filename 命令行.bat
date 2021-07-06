@@ -12,3 +12,6 @@ REM names: [ 'full', 'broken' ]
 ##2)修改对应模型的yaml文件，将nc改为实际的类别数即可
 ##3)进行训练
 python train.py --data myData.yaml --weights yolov5s.pt --batch-size 4 --device 0
+
+##4)推理
+python detect.py --source data/JuBan/images/train --weights best.pt --conf 0.25
