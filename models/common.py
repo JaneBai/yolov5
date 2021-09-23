@@ -25,17 +25,18 @@ def autopad(k, p=None):  # kernel, padding
     return p
 
 
-def DWConv(c1, c2, k=1, s=1, act=True):
+def DWConv(c1, c2, k=1, s=1, act=True): #depthwise convolution 深度可分离卷积
     # Depthwise convolution
     return Conv(c1, c2, k, s, g=math.gcd(c1, c2), act=act)
 
 
-class Conv(nn.Module):
+class Conv(nn.Module): #standard convolution 自定义卷积块： 卷积_BN_激活。类比yolov4里的CBL结构
     # Standard convolution
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super(Conv, self).__init__()
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)
         self.bn = nn.BatchNorm2d(c2)
+        # 问题：有的版本是LeakyReLU激活函数
         self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
 
     def forward(self, x):
@@ -80,7 +81,7 @@ class TransformerBlock(nn.Module):
         p = x.flatten(2).unsqueeze(0).transpose(0, 3).squeeze(3)
         return self.tr(p + self.linear(p)).unsqueeze(3).transpose(0, 3).reshape(b, self.c2, w, h)
 
-
+# 通过残差连接提升模型的特征抽取能力和网络层数
 class Bottleneck(nn.Module):
     # Standard bottleneck
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
@@ -135,7 +136,7 @@ class C3TR(C3):
         c_ = int(c2 * e)
         self.m = TransformerBlock(c_, c_, 4, n)
 
-
+# 空间金字塔池化：集成不同感受野的池化特征
 class SPP(nn.Module):
     # Spatial pyramid pooling layer used in YOLOv3-SPP
     def __init__(self, c1, c2, k=(5, 9, 13)):
@@ -149,8 +150,9 @@ class SPP(nn.Module):
         x = self.cv1(x)
         return self.cv2(torch.cat([x] + [m(x) for m in self.m], 1))
 
-
-class Focus(nn.Module):
+# focus模式的下采样, 其实就是yolov2里面的ReOrg+Conv操作，也是亚像素卷积的反向操作版本。简单来说就是，把数据切分为4份，每份数据都是相当于2倍下采样得到的，然后在channel维度进行拼接
+# 最后进行卷积操作。其最大好处是可以最大程度的减少信息损失而进行下采样操作（有点类似于进行了kernal_size = 2, stride=2的卷积操作）
+class Focus(nn.Module): # 将W、H信息集中到通道空间。问题：为什么通道多少对计算量影响不大，图像缩小会大大减少计算量
     # Focus wh information into c-space
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super(Focus, self).__init__()
@@ -215,6 +217,7 @@ class NMS(nn.Module):
 
 
 class AutoShape(nn.Module):
+    """将model封装成包含前处理、推理、后处理的模块"""
     # input-robust model wrapper for passing cv2/np/PIL/torch inputs. Includes preprocessing, inference and NMS
     conf = 0.25  # NMS confidence threshold
     iou = 0.45  # NMS IoU threshold
@@ -248,25 +251,36 @@ class AutoShape(nn.Module):
 
         # Pre-process
         n, imgs = (len(imgs), imgs) if isinstance(imgs, list) else (1, [imgs])  # number of images, list of images
+        # 初始化shape0存储原图shape，shape1存储图片resize之后的shape，files存储图片保存名字
         shape0, shape1, files = [], [], []  # image and inference shapes, filenames
+        # 处理imgs, 前处理
         for i, im in enumerate(imgs):
             f = f'image{i}'  # filename
+            # 如果传入的是文件名或者是url链接
             if isinstance(im, str):  # filename or uri
                 im, f = Image.open(requests.get(im, stream=True).raw if im.startswith('http') else im), im
                 im = np.asarray(exif_transpose(im))
+            # 如果格式是Pillow格式
             elif isinstance(im, Image.Image):  # PIL Image
                 im, f = np.asarray(exif_transpose(im)), getattr(im, 'filename') or f
+            # 添加图片保存名字，with_suffix('.jpg')表示以jpg为后缀
             files.append(Path(f).with_suffix('.jpg').name)
             if im.shape[0] < 5:  # image in CHW
                 im = im.transpose((1, 2, 0))  # reverse dataloader .transpose(2, 0, 1)
+            # 如果是灰度图，则强制其通道为3，如果通道数大于3，也强制只取前3个通道
             im = im[..., :3] if im.ndim == 3 else np.tile(im[..., None], 3)  # enforce 3ch input
+            # 添加原图长宽
             s = im.shape[:2]  # HWC
             shape0.append(s)  # image shape
             g = (size / max(s))  # gain
+            # 添加resize之后的长宽
             shape1.append([y * g for y in s])
             imgs[i] = im if im.data.contiguous else np.ascontiguousarray(im)  # update
+        # 保存输入size能够整除stride
         shape1 = [make_divisible(x, int(self.stride.max())) for x in np.stack(shape1, 0).max(0)]  # inference shape
+        # resize + pad
         x = [letterbox(im, new_shape=shape1, auto=False)[0] for im in imgs]  # pad
+        # 将图片在第一维度拼接到一起
         x = np.stack(x, 0) if n > 1 else x[0][None]  # stack
         x = np.ascontiguousarray(x.transpose((0, 3, 1, 2)))  # BHWC to BCHW
         x = torch.from_numpy(x).to(p.device).type_as(p) / 255.  # uint8 to fp16/32
@@ -274,23 +288,29 @@ class AutoShape(nn.Module):
 
         with amp.autocast(enabled=p.device.type != 'cpu'):
             # Inference
+            # 推理
             y = self.model(x, augment, profile)[0]  # forward
             t.append(time_synchronized())
 
             # Post-process
+            # nms
             y = non_max_suppression(y, self.conf, iou_thres=self.iou, classes=self.classes, max_det=self.max_det)  # NMS
             for i in range(n):
                 scale_coords(shape1, y[i][:, :4], shape0[i])
 
+            # 反算坐标
             t.append(time_synchronized())
+            # 将预测封装为Detections
             return Detections(imgs, y, files, t, self.names, x.shape)
 
 
 class Detections:
     # detections class for YOLOv5 inference results
+    """处理检测结果"""
     def __init__(self, imgs, pred, files, times=None, names=None, shape=None):
         super(Detections, self).__init__()
         d = pred[0].device  # device
+        # whwh，用来归一化坐标
         gn = [torch.tensor([*[im.shape[i] for i in [1, 0, 1, 0]], 1., 1.], device=d) for im in imgs]  # normalizations
         self.imgs = imgs  # list of images as numpy arrays
         self.pred = pred  # list of tensors pred[0] = (xyxy, conf, cls)
@@ -305,6 +325,7 @@ class Detections:
         self.s = shape  # inference BCHW shape
 
     def display(self, pprint=False, show=False, save=False, crop=False, render=False, save_dir=Path('')):
+        """可视化预测结果"""
         for i, (im, pred) in enumerate(zip(self.imgs, self.pred)):
             str = f'image {i + 1}/{len(self.pred)}: {im.shape[0]}x{im.shape[1]} '
             if pred is not None:
@@ -319,11 +340,15 @@ class Detections:
                         else:  # all others
                             plot_one_box(box, im, label=label, color=colors(cls))
 
+            # ndarray->PIL
             im = Image.fromarray(im.astype(np.uint8)) if isinstance(im, np.ndarray) else im  # from np
+            # 打印检测信息
             if pprint:
                 print(str.rstrip(', '))
+            # 显示预测图
             if show:
                 im.show(self.files[i])  # show
+            # 保存
             if save:
                 f = self.files[i]
                 im.save(save_dir / f)  # save
@@ -348,11 +373,13 @@ class Detections:
         print(f'Saved results to {save_dir}\n')
 
     def render(self):
+        # 获取ndarray预测图并返回
         self.display(render=True)  # render results
         return self.imgs
 
     def pandas(self):
         # return detections as pandas DataFrames, i.e. print(results.pandas().xyxy[0])
+        # 以pandas数据格式返回
         new = copy(self)  # return copy
         ca = 'xmin', 'ymin', 'xmax', 'ymax', 'confidence', 'class', 'name'  # xyxy columns
         cb = 'xcenter', 'ycenter', 'width', 'height', 'confidence', 'class', 'name'  # xywh columns
@@ -363,6 +390,7 @@ class Detections:
 
     def tolist(self):
         # return a list of Detections objects, i.e. 'for result in results.tolist():'
+        # 返回一个list，每个元素为一个Detections类，对应一张图片的预测
         x = [Detections([self.imgs[i]], [self.pred[i]], self.names, self.s) for i in range(self.n)]
         for d in x:
             for k in ['imgs', 'pred', 'xyxy', 'xyxyn', 'xywh', 'xywhn']:

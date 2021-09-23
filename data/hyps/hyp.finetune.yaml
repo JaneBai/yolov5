@@ -34,6 +34,6 @@ shear: 0.602
 perspective: 0.0
 flipud: 0.00856
 fliplr: 0.5
-mosaic: 1.0
+mosaic: 0.0
 mixup: 0.243
 copy_paste: 0.0

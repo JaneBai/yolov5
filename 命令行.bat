@@ -12,6 +12,7 @@ REM names: [ 'full', 'broken' ]
 ##2)修改对应模型的yaml文件，将nc改为实际的类别数即可
 ##3)进行训练
 python train.py --data myData.yaml --weights yolov5s.pt --batch-size 4 --device 0
+python train.py --data data/myData_ShouTao.yaml --weights yolov5x.pt --batch-size 4 --device 0 --cfg models/yolov5x.yaml
 
 ##4)推理
 python detect.py --source data/JuBan/images/train --weights best.pt --conf 0.25
@@ -29,3 +30,10 @@ python .\mo.py  --input_model D:\4_code\GitHub_Open\yolov5\best_juban.onnx --mod
 python yolov5_demo_OV2021.3.py -m openvino\yolov5s.xml -i zidane001.jpg
 python yolo_openvino_demo.py -m openvino\yolov5s.xml -i zidane001.jpg -at yolov5
 python yolo_openvino_demo.py -m openvino\best_juban.xml -i data\JuBan\images\125.png -at yolov5
+
+
+
+修改参数相关：
+1） data/hyps/hyp.scratch.yaml 
+   fl_gamma默认为0.0, focal loss gamma不开启。可以改为大于0的数，如1.5
+   mosaic 默认为1.0， 图像预处理拼接增强开启。可以改为0

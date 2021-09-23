@@ -29,10 +29,14 @@ from utils.metrics import box_iou, fitness
 from utils.torch_utils import init_torch_seeds
 
 # Settings
+# 设置 torch, np, pandas的显示限制
 torch.set_printoptions(linewidth=320, precision=5, profile='long')
 np.set_printoptions(linewidth=320, formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
 pd.options.display.max_columns = 10
+
+# 限制 Opencv-python的线程数
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
+# 设置numpy的线程数
 os.environ['NUMEXPR_MAX_THREADS'] = str(min(os.cpu_count(), 8))  # NumExpr max threads
 
 
@@ -64,6 +68,7 @@ def set_logging(rank=-1, verbose=True):
 
 def init_seeds(seed=0):
     # Initialize random number generator (RNG) seeds
+    """设置固定随机种子"""
     random.seed(seed)
     np.random.seed(seed)
     init_torch_seeds(seed)
@@ -71,16 +76,20 @@ def init_seeds(seed=0):
 
 def get_latest_run(search_dir='.'):
     # Return path to most recent 'last.pt' in /runs (i.e. to --resume from)
+    """获取最新一次训练下的last.pt，方便resume
+    os.path.getctime获取文件的创建时间"""
     last_list = glob.glob(f'{search_dir}/**/last*.pt', recursive=True)
     return max(last_list, key=os.path.getctime) if last_list else ''
 
 
 def is_docker():
+    """是否为docker环境"""
     # Is environment a Docker container?
     return Path('/workspace').exists()  # or Path('/.dockerenv').exists()
 
 
 def is_colab():
+    """判断是否为google colab环境"""
     # Is environment a Google Colab instance?
     try:
         import google.colab
@@ -90,22 +99,26 @@ def is_colab():
 
 
 def is_pip():
+    """判断文件是否为一个pip包"""
     # Is file in a pip package?
     return 'site-packages' in Path(__file__).absolute().parts
 
 
 def emojis(str=''):
+    """这里是按照系统来选取str，使在不同系统都能够打印表情"""
     # Return platform-dependent emoji-safe version of string
     return str.encode().decode('ascii', 'ignore') if platform.system() == 'Windows' else str
 
 
 def file_size(file):
+    """获取文件大小, 单位MB"""
     # Return file size in MB
     return Path(file).stat().st_size / 1e6
 
 
 def check_online():
     # Check internet connectivity
+    """检查网络是否连接"""
     import socket
     try:
         socket.create_connection(("1.1.1.1", 443), 5)  # check host accessibility
@@ -116,15 +129,24 @@ def check_online():
 
 def check_git_status(err_msg=', for updates see https://github.com/ultralytics/yolov5'):
     # Recommend 'git pull' if code is out of date
+    """检查当前代码是否为最新"""
+    # colorstr函数可改变“github:”字体颜色，具体查看colorstr注释
     print(colorstr('github: '), end='')
     try:
+        # 判断文件夹是否存在.git文件夹(git管理的文件夹)
         assert Path('.git').exists(), 'skipping check (not a git repository)'
+        # 判断是否为docker环境
         assert not is_docker(), 'skipping check (Docker image)'
+        # 判断是否联网
         assert check_online(), 'skipping check (offline)'
 
         cmd = 'git fetch && git config --get remote.origin.url'
+        # check_output:shell命令，并返回结果
+        # 将最新的代码拉取到本地，并返回代码地址url
         url = check_output(cmd, shell=True, timeout=5).decode().strip().rstrip('.git')  # git fetch
+        # 获取当前分支名branch
         branch = check_output('git rev-parse --abbrev-ref HEAD', shell=True).decode().strip()  # checked out
+        # 返回落后的提交数
         n = int(check_output(f'git rev-list {branch}..origin/master --count', shell=True))  # commits behind
         if n > 0:
             s = f"⚠️ WARNING: code is out of date by {n} commit{'s' * (n > 1)}. " \
@@ -138,25 +160,35 @@ def check_git_status(err_msg=', for updates see https://github.com/ultralytics/y
 
 def check_python(minimum='3.6.2'):
     # Check current python version vs. required python version
+    """检查当前python版本是否满足要求
+    platform.python_version()获取当前python版本"""
     check_version(platform.python_version(), minimum, name='Python ')
 
 
 def check_version(current='0.0.0', minimum='0.0.0', name='version ', pinned=False):
     # Check version vs. required version
+    """检测当前环境的版本是否满足要求"""
     current, minimum = (pkg.parse_version(x) for x in (current, minimum))
+    # 如果pinned=True则要求环境版本要一致，否则只要大于等于即可
     result = (current == minimum) if pinned else (current >= minimum)
     assert result, f'{name}{minimum} required by YOLOv5, but {name}{current} is currently installed'
 
 
 def check_requirements(requirements='requirements.txt', exclude=()):
+    """检查当前环境是够满足要求
+    exclude:不需要检查的环境包"""
     # Check installed dependencies meet requirements (pass *.txt file or list of packages)
+    # 将requirements显示这是为红色
     prefix = colorstr('red', 'bold', 'requirements:')
+    # 检查python环境是否满足要求
     check_python()  # check python version
     if isinstance(requirements, (str, Path)):  # requirements.txt file
         file = Path(requirements)
+        # 不存在requirements则直接返回
         if not file.exists():
             print(f"{prefix} {file.resolve()} not found, check failed.")
             return
+        # x.name为包名，x.specifier为版本要求，例如>=1.0.2
         requirements = [f'{x.name}{x.specifier}' for x in pkg.parse_requirements(file.open()) if x.name not in exclude]
     else:  # list or tuple of packages
         requirements = [x for x in requirements if x not in exclude]

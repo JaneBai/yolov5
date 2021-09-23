@@ -518,6 +518,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
+        #print('mosaic:',mosaic)
         if mosaic:
             # Load mosaic
             img, labels = load_mosaic(self, index)
@@ -579,10 +580,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         if nl:
             labels_out[:, 1:] = torch.from_numpy(labels)
 
+        #saveImg = Image.fromarray(img)
+        #saveImg.save("e:\\saveImg.bmp")
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
-
+        #print('img shape', img.shape)
+       
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes
 
     @staticmethod
