@@ -532,6 +532,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # Load image
             img, (h0, w0), (h, w) = load_image(self, index)
 
+            #print('\ndataload before h:%d w:%d' %(h,w))
+             
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
             img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
@@ -562,12 +564,14 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
             # Flip up-down
             if random.random() < hyp['flipud']:
+                #print('flipud augment')
                 img = np.flipud(img)
                 if nl:
                     labels[:, 2] = 1 - labels[:, 2]
 
             # Flip left-right
             if random.random() < hyp['fliplr']:
+                #print('fliplr augment')
                 img = np.fliplr(img)
                 if nl:
                     labels[:, 1] = 1 - labels[:, 1]
@@ -578,15 +582,12 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         labels_out = torch.zeros((nl, 6))
         if nl:
-            labels_out[:, 1:] = torch.from_numpy(labels)
-
-        #saveImg = Image.fromarray(img)
-        #saveImg.save("e:\\saveImg.bmp")
+            labels_out[:, 1:] = torch.from_numpy(labels)     
         # Convert
-        img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        img = np.ascontiguousarray(img)
-        #print('img shape', img.shape)
-       
+        #saveImg = Image.fromarray(img)
+        #saveImg.save("e:\\saveImg.bmp") 
+        img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB        
+        img = np.ascontiguousarray(img) 
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes
 
     @staticmethod

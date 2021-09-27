@@ -46,7 +46,7 @@ from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, de_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 from utils.metrics import fitness
-
+#import wandb
 logger = logging.getLogger(__name__)
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -285,7 +285,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Image sizes
     # 获取模型总步长和模型输入图片分辨率
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-    # 获取模型FPN层数
+    # 获取模型FPN层数, 这里为3 Detect的数目
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     # 检查输入图片分辨率确保能够整除总步长gs
     imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
@@ -360,7 +360,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Model parameters
      # 根据自己数据集的类别数和网络FPN层数设置各个损失的系数
     hyp['box'] *= 3. / nl  # scale to layers
-    hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers  80为类别数 此处需修改
+    hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers  80为类别数 不需要修改
     hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
     # 标签平滑
     hyp['label_smoothing'] = opt.label_smoothing
@@ -396,6 +396,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # 通过torch自带的api设置混合精度训练
     scaler = amp.GradScaler(enabled=cuda)
     # 声明计算损失的实例
+    compute_loss = ComputeLoss(model) #init loss class
     """
     打印训练和测试输入图片分辨率
     加载图片时调用的cpu进程数
@@ -451,6 +452,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
 
+            print(imgs.shape)
             # Warmup
             """
             热身训练(前nw次迭代)

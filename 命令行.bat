@@ -12,10 +12,11 @@ REM names: [ 'full', 'broken' ]
 ##2)修改对应模型的yaml文件，将nc改为实际的类别数即可
 ##3)进行训练
 python train.py --data myData.yaml --weights yolov5s.pt --batch-size 4 --device 0
-python train.py --data data/myData_ShouTao.yaml --weights yolov5x.pt --batch-size 4 --device 0 --cfg models/yolov5x.yaml
+python train.py --data data/myData_ShouTao.yaml --weights yolov5x.pt --batch-size 4 --device 0 
+--cfg models/yolov5x.yaml
 
 ##4)推理
-python detect.py --source data/JuBan/images/train --weights best.pt --conf 0.25
+python detect.py --source data/JuBan/images/train --weights best_shoutao.pt --conf 0.25
 
 ##5)训练的模型转为onnx
 python export.py --weights yolov5s.pt --img 640 --batch 1 --opset-version 10
@@ -37,3 +38,6 @@ python yolo_openvino_demo.py -m openvino\best_juban.xml -i data\JuBan\images\125
 1） data/hyps/hyp.scratch.yaml 
    fl_gamma默认为0.0, focal loss gamma不开启。可以改为大于0的数，如1.5
    mosaic 默认为1.0， 图像预处理拼接增强开启。可以改为0
+2) 若训练和测试图像非方形，可以设置为矩形训练(避免填充空白元素太多)
+   --rect
+
